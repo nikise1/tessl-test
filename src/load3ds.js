@@ -269,16 +269,19 @@ function hierarchy(nodes) {
   return root;
 }
 
-function geometryFromMesh(mesh) {
+function geometryFromMesh(mesh, pivot = [0, 0, 0]) {
   const geometry = new BufferGeometry();
   const inverse = mesh.matrix.clone().invert();
   const local = new Float32Array(mesh.vertices.length);
   const point = new Vector3();
+  // 3DS stores the rotation pivot separately from the mesh matrix. Vertices
+  // are moved by -pivot in local space so the node origin (and the biped)
+  // sits on that point instead of the mesh bounding-box origin.
   for (let i = 0; i < mesh.vertices.length; i += 3) {
     point.set(mesh.vertices[i], mesh.vertices[i + 1], mesh.vertices[i + 2]).applyMatrix4(inverse);
-    local[i] = point.x;
-    local[i + 1] = point.y;
-    local[i + 2] = point.z;
+    local[i] = point.x - pivot[0];
+    local[i + 1] = point.y - pivot[1];
+    local[i + 2] = point.z - pivot[2];
   }
   geometry.setAttribute("position", new BufferAttribute(local, 3));
   if (mesh.uvs) geometry.setAttribute("uv", new BufferAttribute(mesh.uvs, 2));
@@ -461,14 +464,15 @@ export function load3DS(arrayBuffer) {
     const mesh = parsed.meshes.get(node.name);
     let object;
     if (name === "skin" && mesh?.vertices) {
-      object = new SkinnedMesh(geometryFromMesh(mesh), skinMaterial);
+      object = new SkinnedMesh(geometryFromMesh(mesh, src.pivot), skinMaterial);
       object.userData.sourcePositions = mesh.vertices;
+      object.userData.pivot = src.pivot;
       skin = object;
     } else if (deform) {
       object = new Bone();
     } else if (mesh?.vertices) {
       const material = name === "log" ? logMaterial : boneMaterial;
-      object = new Mesh(geometryFromMesh(mesh), material);
+      object = new Mesh(geometryFromMesh(mesh, src.pivot), material);
     } else {
       object = new Group();
     }
