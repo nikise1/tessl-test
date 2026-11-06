@@ -1,0 +1,124 @@
+:root {
+  color-scheme: dark;
+  --green: #3cae45;
+  --green-deep: #1d6b28;
+  --ink: #e7f6e4;
+  --muted: #b7cbb4;
+  --panel: #0c120c;
+  --line: #2a4630;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  height: 100%;
+  background: #000;
+  color: var(--ink);
+  font: 15px/1.45 "Segoe UI", Helvetica, Arial, sans-serif;
+}
+
+#view {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.panel {
+  position: absolute;
+  top: 16px;
+  left: 16px;
+  width: min(380px, calc(100vw - 32px));
+  padding: 14px 16px 12px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+}
+
+h1 {
+  margin: 0 0 4px;
+  font-size: 20px;
+  font-weight: 650;
+  letter-spacing: 0.01em;
+}
+
+.file, .hint, .error, details p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.file code {
+  color: var(--ink);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12px;
+}
+
+.row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+button {
+  appearance: none;
+  border: 1px solid var(--line);
+  background: #101910;
+  color: var(--ink);
+  border-radius: 999px;
+  padding: 7px 13px;
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+button:hover { border-color: var(--green); }
+
+button.primary, button[aria-pressed="true"] {
+  background: var(--green);
+  border-color: var(--green);
+  color: #041206;
+  font-weight: 650;
+}
+
+button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.scrub {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 10px;
+  align-items: center;
+  margin-top: 12px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.scrub input {
+  width: 100%;
+  accent-color: var(--green);
+}
+
+.hint { margin-top: 10px; }
+
+details {
+  margin-top: 10px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+summary { cursor: pointer; color: var(--ink); }
+
+details p { margin-top: 8px; }
+
+.error {
+  margin-top: 10px;
+  color: #ffb4b4;
+}
+
+@media (max-width: 640px) {
+  .panel { top: auto; bottom: 12px; left: 12px; }
+}

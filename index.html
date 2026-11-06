@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Lizard</title>
+    <link rel="stylesheet" href="/src/style.css" />
+  </head>
+  <body>
+    <canvas id="view"></canvas>
+    <aside class="panel" id="panel">
+      <h1>Lizard</h1>
+      <p class="file">Loading <code>test_lizard_01.3DS</code>…</p>
+      <div class="row" id="transport" hidden>
+        <button type="button" id="play" class="primary">Play</button>
+        <button type="button" id="pause">Pause</button>
+        <button type="button" id="restart">Restart</button>
+      </div>
+      <div class="row" id="ranges" hidden></div>
+      <label class="scrub" id="scrub-wrap" hidden>
+        <span id="frame-label">Frame 0</span>
+        <input id="scrub" type="range" min="0" max="200" value="0" step="1" />
+      </label>
+      <div class="row" id="toggles" hidden>
+        <button type="button" id="wire" aria-pressed="false">Wireframe</button>
+        <button type="button" id="bones" aria-pressed="false">Skeleton</button>
+      </div>
+      <p class="hint" id="hint" hidden>Drag to rotate · scroll to zoom · right-drag to pan</p>
+      <details id="sources" hidden>
+        <summary>Which files are loaded</summary>
+        <p id="sources-body"></p>
+      </details>
+      <p class="error" id="error" hidden></p>
+    </aside>
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>
