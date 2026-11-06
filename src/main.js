@@ -143,7 +143,7 @@ function setSources(info, textureState = "loading") {
   fileLine.innerHTML = `Loaded <code>${info.sourceFile}</code> · three.js r${THREE.REVISION}`;
   const textureNote =
     textureState === "loaded"
-      ? `The skin is a 2048² green chameleon map (${info.textureFile}) with matching normal and roughness maps, in place of the original 256² ${info.sourceTexture}.`
+      ? `The skin is a 2048² green chameleon map (${info.textureFile}) with a dark red mouth, quieter color on the feet, throat, and tail tip, and matching normal and roughness maps, in place of the original 256² ${info.sourceTexture}.`
       : textureState === "missing"
         ? `The chameleon texture ${info.textureFile} could not be loaded, so the body uses a flat green.`
         : `The chameleon skin texture ${info.textureFile} is loading.`;

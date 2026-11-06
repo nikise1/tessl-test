@@ -256,29 +256,31 @@ def shade(position, normal, region):
     along = (z - z_min) / max(z_max - z_min, 1e-6)
     up = norms[:, 2]
 
-    belly = np.array([0.73, 0.80, 0.38], np.float32)
-    flank = np.array([0.05, 0.42, 0.16], np.float32)
-    back = np.array([0.12, 0.55, 0.18], np.float32)
-    crest = np.array([0.78, 0.84, 0.18], np.float32)
-    leaf = np.array([0.40, 0.72, 0.16], np.float32)
-    teal = np.array([0.05, 0.48, 0.38], np.float32)
+    # Palette sits closer together than the first pass so the greens are quieter,
+    # while the scale height below still draws the hide.
+    belly = np.array([0.46, 0.58, 0.30], np.float32)
+    flank = np.array([0.14, 0.40, 0.18], np.float32)
+    back = np.array([0.20, 0.48, 0.20], np.float32)
+    crest = np.array([0.50, 0.58, 0.24], np.float32)
+    leaf = np.array([0.32, 0.52, 0.20], np.float32)
+    teal = np.array([0.16, 0.44, 0.32], np.float32)
 
     color = mix(belly, flank, smoothstep(-0.75, 0.05, up)[:, None])
     color = mix(color, back, smoothstep(0.0, 0.62, up)[:, None])
     crest_amount = smoothstep(0.42, 0.92, up) * (0.35 + 0.65 * smoothstep(0.35, 0.85, along))
-    color = mix(color, crest, (crest_amount * 0.82)[:, None])
-    color = mix(color, leaf, (smoothstep(0.55, 0.9, along) * smoothstep(-0.2, 0.7, up) * 0.28)[:, None])
+    color = mix(color, crest, (crest_amount * 0.38)[:, None])
+    color = mix(color, leaf, (smoothstep(0.55, 0.9, along) * smoothstep(-0.2, 0.7, up) * 0.16)[:, None])
     side = (1.0 - np.abs(up)) * smoothstep(-0.2, 0.35, up)
-    color = mix(color, teal, (side * 0.22)[:, None])
+    color = mix(color, teal, (side * 0.10)[:, None])
 
     mottled = value_noise(points * 0.035 + 4.0)
     fine = value_noise(points * 0.08 + 18.0)
-    color = mix(color, color * np.array([0.62, 0.78, 0.48], np.float32), (smoothstep(0.58, 0.86, mottled) * 0.55)[:, None])
-    color = mix(color, np.array([0.62, 0.78, 0.22], np.float32), (smoothstep(0.72, 0.92, fine) * 0.42)[:, None])
+    color = mix(color, color * np.array([0.78, 0.86, 0.70], np.float32), (smoothstep(0.58, 0.86, mottled) * 0.28)[:, None])
+    color = mix(color, np.array([0.46, 0.58, 0.26], np.float32), (smoothstep(0.72, 0.92, fine) * 0.18)[:, None])
 
     band = 0.5 + 0.5 * np.sin(z * 0.21 + value_noise(points * 0.02) * 1.4)
     tail = smoothstep(70.0, -20.0, z) * smoothstep(0.42, 0.78, band)
-    color *= (1.0 - 0.42 * tail)[:, None]
+    color *= (1.0 - 0.20 * tail)[:, None]
 
     nearest, second, owner = worley(points, CELL)
     radius = 0.34 + 0.16 * hash_unit(owner, 0x51F0C5B1)
@@ -287,11 +289,11 @@ def shade(position, normal, region):
     crack = smoothstep(0.05, 0.16, (second - nearest) / CELL)
     height = (1.0 - edge) * (0.55 + 0.45 * crack)
     height = height ** 1.15
-    scale_tint = 0.82 + 0.36 * hash_unit(owner, 0xC2B2AE35)
-    color *= (0.74 + 0.38 * height)[:, None] * scale_tint[:, None]
-    color *= (1.0 - 0.22 * (1.0 - crack))[:, None]
+    scale_tint = 0.92 + 0.16 * hash_unit(owner, 0xC2B2AE35)
+    color *= (0.86 + 0.20 * height)[:, None] * scale_tint[:, None]
+    color *= (1.0 - 0.10 * (1.0 - crack))[:, None]
 
-    # Feet share one chart. Keep them greener and a little duller, with a pale pad.
+    # Feet share one chart. A muted olive, with a warmer pad, still scaled.
     foot = regions == FEET
     if np.any(foot):
         fu = xs[foot] / (SIZE - 1)
@@ -299,10 +301,29 @@ def shade(position, normal, region):
         fu = (fu - fu.mean()) / max(fu.std(), 1e-4)
         fv = (fv - fv.mean()) / max(fv.std(), 1e-4)
         pad = np.exp(-0.5 * (fu * fu + fv * fv))
-        color[foot] = mix(color[foot] * np.array([0.72, 0.86, 0.62], np.float32), np.array([0.86, 0.84, 0.46], np.float32), pad[:, None] * 0.55)
+        color[foot] = mix(color[foot], np.array([0.36, 0.34, 0.16], np.float32), 0.32)
+        color[foot] = mix(color[foot], np.array([0.50, 0.42, 0.22], np.float32), pad[:, None] * 0.35)
 
+    # The lower throat on the body chart is the outside of the jaw.
+    throat = (regions == BODY) & (along > 0.70) & (up < -0.05)
+    color[throat] = mix(color[throat], np.array([0.48, 0.40, 0.22], np.float32), 0.22)
+    tip = (regions == BODY) & (along < 0.16)
+    color[tip] = mix(color[tip], np.array([0.34, 0.28, 0.14], np.float32), 0.22)
+
+    # Jaw chart is the mouth cavity. Both the roof and the inner lip share it,
+    # so the whole island is a dark red that still follows the scale height.
     jaw = regions == JAW
-    color[jaw] = mix(color[jaw], np.array([0.80, 0.84, 0.42], np.float32), 0.45)
+    mouth = np.zeros(points.shape[0], np.float32)
+    if np.any(jaw):
+        ju = xs[jaw].astype(np.float32) / (SIZE - 1)
+        jv = 1.0 - ys[jaw].astype(np.float32) / (SIZE - 1)
+        ju = (ju - ju.mean()) / max(float(ju.std()), 1e-4)
+        jv = (jv - jv.mean()) / max(float(jv.std()), 1e-4)
+        depth = np.exp(-0.35 * (ju * ju + jv * jv))
+        tone = (0.58 + 0.42 * height[jaw]) * (0.80 + 0.20 * crack[jaw])
+        tone = tone * (0.62 + 0.38 * (1.0 - depth))
+        color[jaw] = np.array([0.46, 0.07, 0.055], np.float32) * tone[:, None]
+        mouth[jaw] = 1.0
 
     snout = regions == SNOUT
     if np.any(snout):
@@ -323,9 +344,9 @@ def shade(position, normal, region):
         dv = (ev - cv) / radius
         radial = np.sqrt(du * du + dv * dv)
         lid = color[eye]
-        iris = np.array([0.95, 0.62, 0.08], np.float32)
+        iris = np.array([0.72, 0.46, 0.12], np.float32)
         streak = 0.5 + 0.5 * np.sin(np.arctan2(dv, du) * 10.0 + radial * 18.0)
-        iris = mix(iris, np.array([0.55, 0.78, 0.12], np.float32), (0.35 + 0.4 * streak)[:, None])
+        iris = mix(iris, np.array([0.48, 0.55, 0.16], np.float32), (0.28 + 0.28 * streak)[:, None])
         pupil = radial < 0.16
         iris_band = (radial >= 0.16) & (radial < 0.34)
         rim = (radial >= 0.34) & (radial < 0.46)
@@ -342,10 +363,12 @@ def shade(position, normal, region):
     out_color = np.zeros((SIZE, SIZE, 3), np.float32)
     out_height = np.zeros((SIZE, SIZE), np.float32)
     out_gloss = np.zeros((SIZE, SIZE), np.float32)
+    out_mouth = np.zeros((SIZE, SIZE), np.float32)
     out_color[ys, xs] = np.clip(color, 0, 1)
     out_height[ys, xs] = height
     out_gloss[ys, xs] = gloss
-    return out_color, out_height, out_gloss, mask
+    out_mouth[ys, xs] = mouth
+    return out_color, out_height, out_gloss, out_mouth, mask
 
 
 def dilate(color, height, mask, iterations):
@@ -384,12 +407,12 @@ def normals_from_height(height, mask):
     return encoded
 
 
-def roughness_from_height(height, gloss, mask):
+def roughness_from_height(height, gloss, mouth, mask):
     rough = np.full((SIZE, SIZE), np.float32(0.0))
     # Satin scales: raised centers are a little smoother than the cracks.
     rough[mask] = np.clip(0.82 - height[mask] * 0.22, 0.52, 0.9)
-    # Only the iris and pupil are glossy. The lid stays as matte as the skin,
-    # otherwise a single low-poly facet next to the eye blows out to white.
+    # The mouth is a bit wetter than the hide. The iris stays the glossy part.
+    rough[mouth > 0.5] = np.float32(0.38)
     rough[gloss > 0.5] = np.float32(0.18)
     return rough
 
@@ -417,10 +440,10 @@ def main():
     labels = classify_islands(faces)
     print("region counts", {int(k): int((labels == k).sum()) for k in np.unique(labels)})
     position, normal, region = rasterize(faces, labels, SIZE)
-    color, height, gloss, mask = shade(position, normal, region)
+    color, height, gloss, mouth, mask = shade(position, normal, region)
     color, height, mask = dilate(color, height, mask, DILATE)
     normal_map = normals_from_height(height, mask)
-    rough = roughness_from_height(height, gloss, mask)
+    rough = roughness_from_height(height, gloss, mouth, mask)
     out = ROOT / "public" / "models"
     save_rgb(out / "LIZARD_M.png", color)
     save_rgb(out / "LIZARD_M_normal.png", normal_map)
