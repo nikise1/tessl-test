@@ -56,6 +56,8 @@ let skeletonLines = null;
 let skeletonPairs = [];
 const solidColor = new THREE.Color(0x3cae45);
 const wireColor = new THREE.Color(0xdfffe4);
+const textureColor = new THREE.Color(0xffffff);
+let skinMap = null;
 
 function resize() {
   const width = window.innerWidth;
@@ -135,9 +137,48 @@ function show(element) {
   element.hidden = false;
 }
 
-function setSources(info) {
+function setSources(info, textureState = "loading") {
   fileLine.innerHTML = `Loaded <code>${info.sourceFile}</code> · three.js r${THREE.REVISION}`;
-  sourcesBody.textContent = `${info.sourceFile} is on screen: the lizard mesh, the Character Studio biped (${info.deformBones} joints), and one keyframe clip named ${info.animationName} (frames ${info.frameStart}–${info.frameEnd} at ${info.fps} fps). ${info.staticFile} is a static Wavefront skin of the same animal and has no animation, so it is not loaded. three.js TDSLoader does not read 3DS keyframes, so this page parses that chunk itself. The skin was exported without vertex weights; it is bound onto the biped so the clip can deform it. The original texture ${info.textureFile} was not in the upload, so the body uses a flat green close to that render.`;
+  const textureNote =
+    textureState === "loaded"
+      ? `The skin uses ${info.textureFile}, the diffuse map named in the 3DS material.`
+      : textureState === "missing"
+        ? `The original texture ${info.textureFile} could not be loaded, so the body uses a flat green close to that render.`
+        : `The skin texture ${info.textureFile} is loading.`;
+  sourcesBody.textContent = `${info.sourceFile} is on screen: the lizard mesh, the Character Studio biped (${info.deformBones} joints), and one keyframe clip named ${info.animationName} (frames ${info.frameStart}–${info.frameEnd} at ${info.fps} fps). ${info.staticFile} is a static Wavefront skin of the same animal and has no animation, so it is not loaded. three.js TDSLoader does not read 3DS keyframes, so this page parses that chunk itself. The skin was exported without vertex weights; it is bound onto the biped so the clip can deform it. ${textureNote}`;
+}
+
+function paintSkin() {
+  if (!skin) return;
+  const wire = wireButton.getAttribute("aria-pressed") === "true";
+  skin.material.wireframe = wire;
+  if (skinMap && !wire) {
+    skin.material.map = skinMap;
+    skin.material.color.copy(textureColor);
+  } else {
+    skin.material.map = null;
+    skin.material.color.copy(wire ? wireColor : solidColor);
+  }
+  skin.material.needsUpdate = true;
+}
+
+function loadSkinTexture(info) {
+  const loader = new THREE.TextureLoader();
+  loader.load(
+    `/models/${info.textureFile}`,
+    (texture) => {
+      texture.colorSpace = THREE.SRGBColorSpace;
+      texture.anisotropy = renderer.capabilities.getMaxAnisotropy();
+      // 3DS UVs use the OpenGL origin (v = 0 at the bottom). flipY keeps the
+      // atlas upright against that convention.
+      texture.flipY = true;
+      skinMap = texture;
+      paintSkin();
+      setSources(info, "loaded");
+    },
+    undefined,
+    () => setSources(info, "missing"),
+  );
 }
 
 function buildSkeletonLines(bones) {
@@ -215,6 +256,7 @@ async function main() {
   show(sources);
   show(scrubWrap);
   setSources(meta);
+  loadSkinTexture(meta);
   frameModel();
   const params = new URLSearchParams(window.location.search);
   if (params.get("wire") === "1") wireButton.click();
@@ -248,8 +290,7 @@ wireButton.addEventListener("click", () => {
   if (!skin) return;
   const on = wireButton.getAttribute("aria-pressed") !== "true";
   wireButton.setAttribute("aria-pressed", on ? "true" : "false");
-  skin.material.wireframe = on;
-  skin.material.color.copy(on ? wireColor : solidColor);
+  paintSkin();
 });
 bonesButton.addEventListener("click", () => {
   const on = bonesButton.getAttribute("aria-pressed") !== "true";
