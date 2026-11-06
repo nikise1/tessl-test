@@ -310,19 +310,32 @@ def shade(position, normal, region):
     tip = (regions == BODY) & (along < 0.16)
     color[tip] = mix(color[tip], np.array([0.34, 0.28, 0.14], np.float32), 0.22)
 
-    # Jaw chart is the mouth cavity. Both the roof and the inner lip share it,
-    # so the whole island is a dark red that still follows the scale height.
+    # Jaw chart is the mouth cavity (roof and inner lip share it). Soft tissue,
+    # not the body scales: a few low palate ridges and a darker center.
     jaw = regions == JAW
     mouth = np.zeros(points.shape[0], np.float32)
     if np.any(jaw):
         ju = xs[jaw].astype(np.float32) / (SIZE - 1)
         jv = 1.0 - ys[jaw].astype(np.float32) / (SIZE - 1)
-        ju = (ju - ju.mean()) / max(float(ju.std()), 1e-4)
-        jv = (jv - jv.mean()) / max(float(jv.std()), 1e-4)
-        depth = np.exp(-0.35 * (ju * ju + jv * jv))
-        tone = (0.58 + 0.42 * height[jaw]) * (0.80 + 0.20 * crack[jaw])
-        tone = tone * (0.62 + 0.38 * (1.0 - depth))
-        color[jaw] = np.array([0.46, 0.07, 0.055], np.float32) * tone[:, None]
+        ju = (ju - float(ju.mean())) / max(float(ju.std()), 1e-4)
+        jv = (jv - float(jv.mean())) / max(float(jv.std()), 1e-4)
+        wave = np.sin(ju * 3.4)
+        crest = np.clip(wave, 0.0, 1.0) ** 0.65
+        groove = np.clip(-wave, 0.0, 1.0) ** 1.15
+        grain = value_noise(points[jaw] * 0.35 + 9.0)
+        cavity = np.exp(-0.42 * (ju * ju * 0.7 + jv * jv))
+        deep = np.array([0.15, 0.032, 0.028], np.float32)
+        tissue = np.array([0.42, 0.12, 0.10], np.float32)
+        lip = np.array([0.50, 0.17, 0.14], np.float32)
+        flesh = mix(tissue, deep, (cavity * 0.7)[:, None])
+        flesh = mix(flesh, lip, ((1.0 - cavity) * 0.32)[:, None])
+        flesh *= (0.76 + 0.30 * crest)[:, None]
+        flesh = mix(flesh, deep, (groove * 0.38)[:, None])
+        raphe = np.exp(-(ju * ju) * 2.4)
+        flesh = mix(flesh, flesh * np.array([1.12, 1.04, 1.0], np.float32), (raphe * 0.22)[:, None])
+        flesh *= (0.94 + 0.08 * grain)[:, None]
+        color[jaw] = flesh
+        height[jaw] = 0.28 + 0.26 * crest - 0.06 * groove
         mouth[jaw] = 1.0
 
     snout = regions == SNOUT
@@ -412,7 +425,7 @@ def roughness_from_height(height, gloss, mouth, mask):
     # Satin scales: raised centers are a little smoother than the cracks.
     rough[mask] = np.clip(0.82 - height[mask] * 0.22, 0.52, 0.9)
     # The mouth is a bit wetter than the hide. The iris stays the glossy part.
-    rough[mouth > 0.5] = np.float32(0.38)
+    rough[mouth > 0.5] = np.float32(0.55)
     rough[gloss > 0.5] = np.float32(0.18)
     return rough
 

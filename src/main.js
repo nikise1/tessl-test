@@ -143,7 +143,7 @@ function setSources(info, textureState = "loading") {
   fileLine.innerHTML = `Loaded <code>${info.sourceFile}</code> · three.js r${THREE.REVISION}`;
   const textureNote =
     textureState === "loaded"
-      ? `The skin is a 2048² green chameleon map (${info.textureFile}) with a dark red mouth, quieter color on the feet, throat, and tail tip, and matching normal and roughness maps, in place of the original 256² ${info.sourceTexture}.`
+      ? `The skin is a 2048² green chameleon map (${info.textureFile}) with a soft mouth interior, quieter color on the feet, throat, and tail tip, and matching normal and roughness maps, in place of the original 256² ${info.sourceTexture}.`
       : textureState === "missing"
         ? `The chameleon texture ${info.textureFile} could not be loaded, so the body uses a flat green.`
         : `The chameleon skin texture ${info.textureFile} is loading.`;
@@ -174,10 +174,12 @@ function prepareTexture(texture, colorSpace) {
   return texture;
 }
 
+const asset = (path) => `${import.meta.env.BASE_URL}${path.replace(/^\//, "")}`;
+
 function loadSkinTexture(info) {
   const loader = new THREE.TextureLoader();
   loader.load(
-    `/models/${info.textureFile}`,
+    asset(`models/${info.textureFile}`),
     (texture) => {
       skinMap = prepareTexture(texture, THREE.SRGBColorSpace);
       paintSkin();
@@ -187,13 +189,13 @@ function loadSkinTexture(info) {
     () => setSources(info, "missing"),
   );
   if (info.normalFile) {
-    loader.load(`/models/${info.normalFile}`, (texture) => {
+    loader.load(asset(`models/${info.normalFile}`), (texture) => {
       skinNormal = prepareTexture(texture, THREE.NoColorSpace);
       paintSkin();
     });
   }
   if (info.roughnessFile) {
-    loader.load(`/models/${info.roughnessFile}`, (texture) => {
+    loader.load(asset(`models/${info.roughnessFile}`), (texture) => {
       skinRoughness = prepareTexture(texture, THREE.NoColorSpace);
       paintSkin();
     });
@@ -233,7 +235,7 @@ function updateSkeletonLines() {
 
 async function main() {
   resize();
-  const response = await fetch("/models/test_lizard_01.3ds");
+  const response = await fetch(asset("models/test_lizard_01.3ds"));
   if (!response.ok) throw new Error(`Could not fetch the 3DS file (${response.status})`);
   const buffer = await response.arrayBuffer();
   const loaded = load3DS(buffer);
