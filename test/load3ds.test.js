@@ -33,21 +33,29 @@ test("bind pose puts the head joint on the exported head mesh", () => {
   assert.ok(Math.abs(position.z - 189) < 2, `z ${position.z}`);
 });
 
-test("skin vertices round-trip through the node transform", () => {
+test("skin vertices round-trip through the node transform and pivot", () => {
   const loaded = load();
   loaded.object.updateMatrixWorld(true);
   const source = loaded.skin.userData.sourcePositions;
+  const pivot = loaded.skin.userData.pivot;
   const position = loaded.skin.geometry.attributes.position;
   const point = new Vector3();
   let worst = 0;
   for (let i = 0; i < position.count; i += 40) {
-    point.fromBufferAttribute(position, i).applyMatrix4(loaded.skin.matrixWorld);
+    // Local positions are stored relative to the 3DS pivot. Adding it back
+    // recovers the exported vertex before the node matrix is applied.
+    point.fromBufferAttribute(position, i);
+    point.x += pivot[0];
+    point.y += pivot[1];
+    point.z += pivot[2];
+    point.applyMatrix4(loaded.skin.matrixWorld);
     const dx = point.x - source[i * 3];
     const dy = point.y - source[i * 3 + 1];
     const dz = point.z - source[i * 3 + 2];
     worst = Math.max(worst, Math.hypot(dx, dy, dz));
   }
   assert.ok(worst < 0.5, `worst error ${worst}`);
+  assert.ok(Math.hypot(pivot[0], pivot[1], pivot[2]) > 10, "skin pivot should offset the mesh onto the biped");
 });
 
 test("every skin vertex has normalized weights", () => {
@@ -72,6 +80,25 @@ test("bind-pose skinning does not move the surface", () => {
     worst = Math.max(worst, local.distanceTo(skinned));
   }
   assert.ok(worst < 0.5, `worst skinning error ${worst}`);
+});
+
+test("the skin pivot pulls the extremities onto the biped", () => {
+  const loaded = load();
+  loaded.object.updateMatrixWorld(true);
+  const position = loaded.skin.geometry.attributes.position;
+  const point = new Vector3();
+  const bonePoint = new Vector3();
+  const names = ["Bip01 Tai4", "Bip01 L F4", "Bip01 R F4", "Bip01 L T4", "Bip01 R T4"];
+  for (const name of names) {
+    loaded.object.getObjectByName(name).getWorldPosition(bonePoint);
+    let nearest = Infinity;
+    for (let i = 0; i < position.count; i += 1) {
+      point.fromBufferAttribute(position, i);
+      loaded.skin.localToWorld(point);
+      nearest = Math.min(nearest, point.distanceTo(bonePoint));
+    }
+    assert.ok(nearest < 8, `${name} is ${nearest.toFixed(1)} from the skin`);
+  }
 });
 
 test("the clip moves the head", () => {
