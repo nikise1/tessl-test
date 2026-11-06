@@ -500,7 +500,10 @@ export function load3DS(arrayBuffer) {
       });
       tracks.push(new VectorKeyframeTrack(`${name}.position`, times, values));
     }
-    if (quats.length > 1) {
+    // Bip01 is the biped root. Its rotation keys turn the whole animal around
+    // the perch, about 110° across the clip. Limb, spine, and head tracks
+    // already carry the motion, so the root stays on its first key.
+    if (quats.length > 1 && name !== "Bip01") {
       const times = src.rot.map((key) => key.frame / FPS);
       const values = [];
       quats.forEach((q) => values.push(q.x, q.y, q.z, q.w));
