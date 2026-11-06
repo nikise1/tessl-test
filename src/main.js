@@ -58,6 +58,8 @@ const solidColor = new THREE.Color(0x3cae45);
 const wireColor = new THREE.Color(0xdfffe4);
 const textureColor = new THREE.Color(0xffffff);
 let skinMap = null;
+let skinNormal = null;
+let skinRoughness = null;
 
 function resize() {
   const width = window.innerWidth;
@@ -141,10 +143,10 @@ function setSources(info, textureState = "loading") {
   fileLine.innerHTML = `Loaded <code>${info.sourceFile}</code> · three.js r${THREE.REVISION}`;
   const textureNote =
     textureState === "loaded"
-      ? `The skin uses ${info.textureFile}, the diffuse map named in the 3DS material.`
+      ? `The skin is a 2048² green chameleon map (${info.textureFile}) with matching normal and roughness maps, in place of the original 256² ${info.sourceTexture}.`
       : textureState === "missing"
-        ? `The original texture ${info.textureFile} could not be loaded, so the body uses a flat green close to that render.`
-        : `The skin texture ${info.textureFile} is loading.`;
+        ? `The chameleon texture ${info.textureFile} could not be loaded, so the body uses a flat green.`
+        : `The chameleon skin texture ${info.textureFile} is loading.`;
   sourcesBody.textContent = `${info.sourceFile} is on screen: the lizard mesh, the Character Studio biped (${info.deformBones} joints), and one keyframe clip named ${info.animationName} (frames ${info.frameStart}–${info.frameEnd} at ${info.fps} fps). ${info.staticFile} is a static Wavefront skin of the same animal and has no animation, so it is not loaded. three.js TDSLoader does not read 3DS keyframes, so this page parses that chunk itself. The skin was exported without vertex weights; it is bound onto the biped so the clip can deform it. ${textureNote}`;
 }
 
@@ -152,14 +154,24 @@ function paintSkin() {
   if (!skin) return;
   const wire = wireButton.getAttribute("aria-pressed") === "true";
   skin.material.wireframe = wire;
-  if (skinMap && !wire) {
-    skin.material.map = skinMap;
-    skin.material.color.copy(textureColor);
-  } else {
-    skin.material.map = null;
-    skin.material.color.copy(wire ? wireColor : solidColor);
-  }
+  const textured = Boolean(skinMap) && !wire;
+  skin.material.map = textured ? skinMap : null;
+  skin.material.normalMap = textured ? skinNormal : null;
+  skin.material.roughnessMap = textured ? skinRoughness : null;
+  skin.material.roughness = textured && skinRoughness ? 1 : 0.58;
+  skin.material.color.copy(textured ? textureColor : wire ? wireColor : solidColor);
   skin.material.needsUpdate = true;
+}
+
+function prepareTexture(texture, colorSpace) {
+  texture.colorSpace = colorSpace;
+  texture.anisotropy = renderer.capabilities.getMaxAnisotropy();
+  texture.wrapS = THREE.ClampToEdgeWrapping;
+  texture.wrapT = THREE.ClampToEdgeWrapping;
+  // 3DS UVs use the OpenGL origin (v = 0 at the bottom). flipY keeps the
+  // atlas upright against that convention.
+  texture.flipY = true;
+  return texture;
 }
 
 function loadSkinTexture(info) {
@@ -167,18 +179,25 @@ function loadSkinTexture(info) {
   loader.load(
     `/models/${info.textureFile}`,
     (texture) => {
-      texture.colorSpace = THREE.SRGBColorSpace;
-      texture.anisotropy = renderer.capabilities.getMaxAnisotropy();
-      // 3DS UVs use the OpenGL origin (v = 0 at the bottom). flipY keeps the
-      // atlas upright against that convention.
-      texture.flipY = true;
-      skinMap = texture;
+      skinMap = prepareTexture(texture, THREE.SRGBColorSpace);
       paintSkin();
       setSources(info, "loaded");
     },
     undefined,
     () => setSources(info, "missing"),
   );
+  if (info.normalFile) {
+    loader.load(`/models/${info.normalFile}`, (texture) => {
+      skinNormal = prepareTexture(texture, THREE.NoColorSpace);
+      paintSkin();
+    });
+  }
+  if (info.roughnessFile) {
+    loader.load(`/models/${info.roughnessFile}`, (texture) => {
+      skinRoughness = prepareTexture(texture, THREE.NoColorSpace);
+      paintSkin();
+    });
+  }
 }
 
 function buildSkeletonLines(bones) {

@@ -525,7 +525,10 @@ export function load3DS(arrayBuffer) {
     frameEnd: parsed.segment[1] || parsed.frameCount,
     skinVertices: skin ? skin.geometry.attributes.position.count : 0,
     deformBones: bones.length,
-    textureFile: "LIZARD_M.JPG",
+    sourceTexture: "LIZARD_M.JPG",
+    textureFile: "LIZARD_M.png",
+    normalFile: "LIZARD_M_normal.png",
+    roughnessFile: "LIZARD_M_roughness.png",
   };
   return { object: root, clip, skin, bones, meta };
 }
