@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import test from "node:test";
-import { AnimationMixer, Vector3 } from "three";
+import { AnimationMixer, Quaternion, Vector3 } from "three";
 import { load3DS } from "../src/load3ds.js";
 
 const file = new URL("../public/models/test_lizard_01.3ds", import.meta.url);
@@ -98,6 +98,21 @@ test("the skin pivot pulls the extremities onto the biped", () => {
       nearest = Math.min(nearest, point.distanceTo(bonePoint));
     }
     assert.ok(nearest < 8, `${name} is ${nearest.toFixed(1)} from the skin`);
+  }
+});
+
+test("the root joint keeps its perch orientation", () => {
+  const loaded = load();
+  const rootBone = loaded.object.getObjectByName("Bip01");
+  const rest = rootBone.quaternion.clone();
+  const mixer = new AnimationMixer(loaded.object);
+  const action = mixer.clipAction(loaded.clip);
+  action.play();
+  for (const frame of [30, 60, 94]) {
+    mixer.setTime(frame / 30);
+    const turn = new Quaternion().copy(rest).invert().multiply(rootBone.quaternion);
+    const angle = (2 * Math.acos(Math.min(1, Math.abs(turn.w))) * 180) / Math.PI;
+    assert.ok(angle < 1, `frame ${frame} root turned ${angle.toFixed(1)}°`);
   }
 });
 
