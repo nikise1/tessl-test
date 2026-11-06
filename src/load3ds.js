@@ -15,6 +15,7 @@ import {
   Vector3,
   VectorKeyframeTrack,
 } from "three";
+import { woodTexture } from "./wood.js";
 
 // three.js r187 TDSLoader reads meshes only. This file also reads the
 // keyframe chunk (0xB000) so the Character Studio biped can play.
@@ -443,7 +444,8 @@ export function load3DS(arrayBuffer) {
     metalness: 0.02,
   });
   const logMaterial = new MeshStandardMaterial({
-    color: 0x6d5132,
+    color: 0xffffff,
+    map: woodTexture(),
     roughness: 0.86,
     metalness: 0,
   });
