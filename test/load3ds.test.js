@@ -132,3 +132,27 @@ test("the clip moves the head", () => {
   mixer.setTime(0);
   loaded.object.updateMatrixWorld(true);
 });
+
+test("the perch pole is textured in a wood colour", () => {
+  const loaded = load();
+  const log = loaded.object.getObjectByName("log");
+  const map = log.material.map;
+  assert.ok(map, "the log material has a texture map");
+  assert.ok(log.geometry.attributes.uv, "the log mesh has UVs for the map");
+  const { data } = map.image;
+  let r = 0;
+  let g = 0;
+  let b = 0;
+  const pixels = data.length / 4;
+  for (let i = 0; i < data.length; i += 4) {
+    r += data[i];
+    g += data[i + 1];
+    b += data[i + 2];
+  }
+  r /= pixels;
+  g /= pixels;
+  b /= pixels;
+  // Wood is a warm brown: red over green over blue, neither near black nor white.
+  assert.ok(r > g && g > b, `average colour ${r.toFixed(0)},${g.toFixed(0)},${b.toFixed(0)}`);
+  assert.ok(r > 90 && r < 220, `red ${r.toFixed(0)}`);
+});
