@@ -156,3 +156,77 @@ test("the perch pole is textured in a wood colour", () => {
   assert.ok(r > g && g > b, `average colour ${r.toFixed(0)},${g.toFixed(0)},${b.toFixed(0)}`);
   assert.ok(r > 90 && r < 220, `red ${r.toFixed(0)}`);
 });
+
+function tongueTip(loaded) {
+  // The farthest skinned vertex along the tongue is the end of the club.
+  const { mesh } = loaded.tongue;
+  const position = mesh.geometry.attributes.position;
+  const point = new Vector3();
+  const root = new Vector3();
+  loaded.tongue.bones[0].getWorldPosition(root);
+  let tip = null;
+  for (let i = 0; i < position.count; i += 1) {
+    mesh.applyBoneTransform(i, point.fromBufferAttribute(position, i));
+    mesh.localToWorld(point);
+    if (!tip || point.distanceTo(root) > tip.distanceTo(root)) tip = point.clone();
+  }
+  return tip;
+}
+
+test("the tongue sits in the mouth on its own bones under the lower jaw", () => {
+  const loaded = load();
+  loaded.object.updateMatrixWorld(true);
+  const root = loaded.object.getObjectByName("Tongue");
+  const tip = loaded.object.getObjectByName("Tongue Tip");
+  assert.ok(root?.isBone && tip?.isBone, "tongue bones exist");
+  assert.equal(root.parent.name, "Bip01 Bott");
+  assert.equal(tip.parent, root);
+  assert.deepEqual(loaded.tongue.mesh.skeleton.bones, [root, tip]);
+  const weights = loaded.tongue.mesh.geometry.attributes.skinWeight;
+  for (let i = 0; i < weights.count; i += 1) {
+    assert.ok(Math.abs(weights.getX(i) + weights.getY(i) - 1) < 1e-6, `vertex ${i}`);
+  }
+  // At rest the whole tongue stays inside the head, near the jaw.
+  const jaw = new Vector3();
+  loaded.object.getObjectByName("Bip01 Bott").getWorldPosition(jaw);
+  const distance = tongueTip(loaded).distanceTo(jaw);
+  assert.ok(distance < 70, `tongue tip is ${distance.toFixed(1)} from the jaw`);
+});
+
+test("the tongue grows out of the mouth and shrinks back", () => {
+  const loaded = load();
+  loaded.object.updateMatrixWorld(true);
+  const rest = tongueTip(loaded);
+  const rootBefore = new Vector3();
+  const rootAfter = new Vector3();
+  loaded.tongue.bones[0].getWorldPosition(rootBefore);
+
+  loaded.tongue.setExtension(1);
+  const out = tongueTip(loaded);
+  loaded.tongue.bones[0].getWorldPosition(rootAfter);
+  assert.equal(loaded.tongue.extension, 1);
+  assert.ok(Math.abs(out.distanceTo(rest) - loaded.tongue.reach) < 1, `moved ${out.distanceTo(rest)}`);
+  assert.ok(rootAfter.distanceTo(rootBefore) < 1e-6, "the root stays in the mouth");
+
+  loaded.tongue.setExtension(0.5);
+  const half = tongueTip(loaded);
+  assert.ok(Math.abs(half.distanceTo(rest) - loaded.tongue.reach / 2) < 1, `half moved ${half.distanceTo(rest)}`);
+
+  loaded.tongue.setExtension(0);
+  assert.ok(tongueTip(loaded).distanceTo(rest) < 1e-3, "the tongue returns to rest");
+  loaded.tongue.setExtension(5);
+  assert.equal(loaded.tongue.extension, 1, "extension clamps to 1");
+});
+
+test("the tongue follows the jaw through the clip", () => {
+  const loaded = load();
+  const mixer = new AnimationMixer(loaded.object);
+  mixer.clipAction(loaded.clip).play();
+  mixer.setTime(35 / 30);
+  loaded.object.updateMatrixWorld(true);
+  const jaw = new Vector3();
+  const root = new Vector3();
+  loaded.object.getObjectByName("Bip01 Bott").getWorldPosition(jaw);
+  loaded.tongue.bones[0].getWorldPosition(root);
+  assert.ok(root.distanceTo(jaw) < 25, `tongue root is ${root.distanceTo(jaw).toFixed(1)} from the jaw`);
+});

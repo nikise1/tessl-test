@@ -24,7 +24,12 @@
       <div class="row" id="toggles" hidden>
         <button type="button" id="wire" aria-pressed="false">Wireframe</button>
         <button type="button" id="bones" aria-pressed="false">Skeleton</button>
+        <button type="button" id="flick">Flick tongue</button>
       </div>
+      <label class="scrub" id="tongue-wrap" hidden>
+        <span>Tongue</span>
+        <input id="tongue" type="range" min="0" max="1" value="0" step="0.01" />
+      </label>
       <p class="hint" id="hint" hidden>Drag to rotate · scroll to zoom · right-drag to pan</p>
       <details id="sources" hidden>
         <summary>Which files are loaded</summary>
