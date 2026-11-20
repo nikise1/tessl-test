@@ -12,13 +12,15 @@ import {
 // lower jaw (Bip01 Bott) and follows the jaw through the clip. The jaw's +x
 // runs from the mouth corner to the chin; the upper jaw sits at -y.
 const ROOT = [12, -17, 0];
-// Aim between the two jaw tips (Bip01 Pony and Bip01 Pon0), out of the mouth.
-const PITCH = Math.atan2(-7, 48);
+// Aim straight out along the snout, just under the upper jaw, so the tongue
+// leaves the mouth in line with the head rather than drooping toward the chin.
+const PITCH = (-16 * Math.PI) / 180;
 // Shaft from the root to the club, then the sticky club at the tip.
 const SHAFT = 32;
 const CLUB = 10;
-// At full extension the club is this far past its rest position.
-const REACH = 220;
+// At full extension the club is this far past its rest position, so the whole
+// tongue measures SHAFT + CLUB + REACH = 524 from root to tip.
+const REACH = 482;
 
 function profile() {
   const points = [];
