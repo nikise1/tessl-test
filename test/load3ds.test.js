@@ -207,6 +207,8 @@ test("the tongue grows out of the mouth and shrinks back", () => {
   assert.equal(loaded.tongue.extension, 1);
   assert.ok(Math.abs(out.distanceTo(rest) - loaded.tongue.reach) < 1, `moved ${out.distanceTo(rest)}`);
   assert.ok(rootAfter.distanceTo(rootBefore) < 1e-6, "the root stays in the mouth");
+  const length = out.distanceTo(rootAfter);
+  assert.ok(Math.abs(length - 524) < 1, `full tongue is ${length.toFixed(1)} long`);
 
   loaded.tongue.setExtension(0.5);
   const half = tongueTip(loaded);
