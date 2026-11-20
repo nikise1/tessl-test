@@ -15,6 +15,7 @@ import {
   Vector3,
   VectorKeyframeTrack,
 } from "three";
+import { addTongue } from "./tongue.js";
 import { woodTexture } from "./wood.js";
 
 // three.js r187 TDSLoader reads meshes only. This file also reads the
@@ -518,6 +519,8 @@ export function load3DS(arrayBuffer) {
   tree.children.forEach((child) => build(child, root));
   root.updateMatrixWorld(true);
   if (skin && bones.length) bindSkin(skin, bones);
+  const jaw = root.getObjectByName("Bip01 Bott");
+  const tongue = jaw ? addTongue(jaw) : null;
 
   const duration = Math.max(parsed.segment[1], parsed.frameCount) / FPS;
   const clip = new AnimationClip(parsed.animationName || "MAXSCENE", duration, tracks);
@@ -535,7 +538,7 @@ export function load3DS(arrayBuffer) {
     normalFile: "LIZARD_M_normal.png",
     roughnessFile: "LIZARD_M_roughness.png",
   };
-  return { object: root, clip, skin, bones, meta };
+  return { object: root, clip, skin, bones, tongue, meta };
 }
 
 export { FPS };

@@ -16,6 +16,9 @@ const pauseButton = document.querySelector("#pause");
 const restartButton = document.querySelector("#restart");
 const wireButton = document.querySelector("#wire");
 const bonesButton = document.querySelector("#bones");
+const flickButton = document.querySelector("#flick");
+const tongueSlider = document.querySelector("#tongue");
+const tongueWrap = document.querySelector("#tongue-wrap");
 const scrub = document.querySelector("#scrub");
 const scrubWrap = document.querySelector("#scrub-wrap");
 const frameLabel = document.querySelector("#frame-label");
@@ -60,6 +63,12 @@ const textureColor = new THREE.Color(0xffffff);
 let skinMap = null;
 let skinNormal = null;
 let skinRoughness = null;
+let tongue = null;
+let flickStart = null;
+// One flick: the tongue shoots out, holds a moment, and pulls back in.
+const FLICK_OUT = 0.12;
+const FLICK_HOLD = 0.18;
+const FLICK_IN = 0.45;
 
 function resize() {
   const width = window.innerWidth;
@@ -147,7 +156,7 @@ function setSources(info, textureState = "loading") {
       : textureState === "missing"
         ? `The chameleon texture ${info.textureFile} could not be loaded, so the body uses a flat green.`
         : `The chameleon skin texture ${info.textureFile} is loading.`;
-  sourcesBody.textContent = `${info.sourceFile} is on screen: the lizard mesh, the Character Studio biped (${info.deformBones} joints), and one keyframe clip named ${info.animationName} (frames ${info.frameStart}–${info.frameEnd} at ${info.fps} fps). ${info.staticFile} is a static Wavefront skin of the same animal and has no animation, so it is not loaded. three.js TDSLoader does not read 3DS keyframes, so this page parses that chunk itself. The skin was exported without vertex weights; it is bound onto the biped so the clip can deform it. ${textureNote}`;
+  sourcesBody.textContent = `${info.sourceFile} is on screen: the lizard mesh, the Character Studio biped (${info.deformBones} joints), and one keyframe clip named ${info.animationName} (frames ${info.frameStart}–${info.frameEnd} at ${info.fps} fps). ${info.staticFile} is a static Wavefront skin of the same animal and has no animation, so it is not loaded. three.js TDSLoader does not read 3DS keyframes, so this page parses that chunk itself. The skin was exported without vertex weights; it is bound onto the biped so the clip can deform it. The tongue is not in the 3DS file: it is built in code on two extra bones under the lower jaw (Bip01 Bott), and its tip bone slides out to grow it and back to shrink it. ${textureNote}`;
 }
 
 function paintSkin() {
@@ -233,6 +242,26 @@ function updateSkeletonLines() {
   attribute.needsUpdate = true;
 }
 
+function setTongue(value) {
+  if (!tongue) return;
+  tongue.setExtension(value);
+  tongueSlider.value = String(tongue.extension);
+}
+
+function flickAt(seconds) {
+  if (seconds < FLICK_OUT) return seconds / FLICK_OUT;
+  if (seconds < FLICK_OUT + FLICK_HOLD) return 1;
+  const back = (seconds - FLICK_OUT - FLICK_HOLD) / FLICK_IN;
+  return back >= 1 ? 0 : 1 - back * back * (3 - 2 * back);
+}
+
+function updateFlick() {
+  if (flickStart === null) return;
+  const seconds = (performance.now() - flickStart) / 1000;
+  setTongue(flickAt(seconds));
+  if (seconds >= FLICK_OUT + FLICK_HOLD + FLICK_IN) flickStart = null;
+}
+
 async function main() {
   resize();
   const response = await fetch(asset("models/test_lizard_01.3ds"));
@@ -241,6 +270,7 @@ async function main() {
   const loaded = load3DS(buffer);
   meta = loaded.meta;
   skin = loaded.skin;
+  tongue = loaded.tongue;
   model = new THREE.Group();
   // 3DS is Z-up. Rotate the whole scene so the biped's up axis is Y.
   model.rotation.x = -Math.PI / 2;
@@ -248,7 +278,7 @@ async function main() {
   scene.add(model);
   model.updateMatrixWorld(true);
 
-  buildSkeletonLines(loaded.bones);
+  buildSkeletonLines(tongue ? [...loaded.bones, ...tongue.bones] : loaded.bones);
   mixer = new THREE.AnimationMixer(loaded.object);
   action = mixer.clipAction(loaded.clip);
   action.play();
@@ -276,12 +306,15 @@ async function main() {
   show(hint);
   show(sources);
   show(scrubWrap);
+  if (tongue) show(tongueWrap);
+  else flickButton.hidden = true;
   setSources(meta);
   loadSkinTexture(meta);
   frameModel();
   const params = new URLSearchParams(window.location.search);
   if (params.get("wire") === "1") wireButton.click();
   if (params.get("bones") === "1") bonesButton.click();
+  if (params.has("tongue")) setTongue(Number(params.get("tongue")));
   if (params.has("frame")) setFrame(Number(params.get("frame")));
   else if (params.get("play") === "1") playFrom(0);
   syncControls();
@@ -295,6 +328,9 @@ async function main() {
     camera,
     controls,
     skin,
+    tongue,
+    setTongue,
+    flick: () => flickButton.click(),
     scene,
   };
 }
@@ -319,6 +355,14 @@ bonesButton.addEventListener("click", () => {
   if (skeletonLines) skeletonLines.visible = on;
   updateSkeletonLines();
 });
+flickButton.addEventListener("click", () => {
+  if (!tongue) return;
+  flickStart = performance.now();
+});
+tongueSlider.addEventListener("input", () => {
+  flickStart = null;
+  setTongue(Number(tongueSlider.value));
+});
 scrub.addEventListener("input", () => setFrame(Number(scrub.value)));
 window.addEventListener("resize", resize);
 window.addEventListener("keydown", (event) => {
@@ -331,6 +375,7 @@ window.addEventListener("keydown", (event) => {
 function tick() {
   const delta = clock.getDelta();
   if (mixer && playing) mixer.update(delta);
+  updateFlick();
   controls.update();
   updateSkeletonLines();
   if (mixer) syncControls();
