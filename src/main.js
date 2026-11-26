@@ -1,5 +1,6 @@
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
+import { createFly } from "./fly.js";
 import { FPS, load3DS } from "./load3ds.js";
 
 const canvas = document.querySelector("#view");
@@ -64,6 +65,7 @@ let skinMap = null;
 let skinNormal = null;
 let skinRoughness = null;
 let tongue = null;
+let fly = null;
 let flickStart = null;
 // One flick: the tongue shoots out, holds a moment, and pulls back in.
 const FLICK_OUT = 0.12;
@@ -156,7 +158,7 @@ function setSources(info, textureState = "loading") {
       : textureState === "missing"
         ? `The chameleon texture ${info.textureFile} could not be loaded, so the body uses a flat green.`
         : `The chameleon skin texture ${info.textureFile} is loading.`;
-  sourcesBody.textContent = `${info.sourceFile} is on screen: the lizard mesh, the Character Studio biped (${info.deformBones} joints), and one keyframe clip named ${info.animationName} (frames ${info.frameStart}–${info.frameEnd} at ${info.fps} fps). ${info.staticFile} is a static Wavefront skin of the same animal and has no animation, so it is not loaded. three.js TDSLoader does not read 3DS keyframes, so this page parses that chunk itself. The skin was exported without vertex weights; it is bound onto the biped so the clip can deform it. The tongue is not in the 3DS file: it is built in code on two extra bones under the lower jaw (Bip01 Bott), and its tip bone slides out to grow it and back to shrink it. ${textureNote}`;
+  sourcesBody.textContent = `${info.sourceFile} is on screen: the lizard mesh, the Character Studio biped (${info.deformBones} joints), and one keyframe clip named ${info.animationName} (frames ${info.frameStart}–${info.frameEnd} at ${info.fps} fps). ${info.staticFile} is a static Wavefront skin of the same animal and has no animation, so it is not loaded. three.js TDSLoader does not read 3DS keyframes, so this page parses that chunk itself. The skin was exported without vertex weights; it is bound onto the biped so the clip can deform it. The tongue is not in the 3DS file: it is built in code on two extra bones under the lower jaw (Bip01 Bott), and its tip bone slides out to grow it and back to shrink it. A fly, also built in code, buzzes at the end of the tongue's reach: flick the tongue to catch and eat it, and another one arrives a moment later. ${textureNote}`;
 }
 
 function paintSkin() {
@@ -262,6 +264,20 @@ function updateFlick() {
   if (seconds >= FLICK_OUT + FLICK_HOLD + FLICK_IN) flickStart = null;
 }
 
+function tongueTipBone() {
+  return tongue.bones[tongue.bones.length - 1];
+}
+
+// The fly hovers where the tip of the fully extended tongue lands in the rest pose.
+function addFly() {
+  const home = new THREE.Vector3();
+  tongue.setExtension(1);
+  tongueTipBone().getWorldPosition(home);
+  tongue.setExtension(0);
+  fly = createFly(home);
+  scene.add(fly.group);
+}
+
 async function main() {
   resize();
   const response = await fetch(asset("models/test_lizard_01.3ds"));
@@ -277,6 +293,7 @@ async function main() {
   model.add(loaded.object);
   scene.add(model);
   model.updateMatrixWorld(true);
+  if (tongue) addFly();
 
   buildSkeletonLines(tongue ? [...loaded.bones, ...tongue.bones] : loaded.bones);
   mixer = new THREE.AnimationMixer(loaded.object);
@@ -331,6 +348,7 @@ async function main() {
     tongue,
     setTongue,
     flick: () => flickButton.click(),
+    fly,
     scene,
   };
 }
@@ -376,6 +394,7 @@ function tick() {
   const delta = clock.getDelta();
   if (mixer && playing) mixer.update(delta);
   updateFlick();
+  if (fly) fly.update(clock.elapsedTime, tongueTipBone(), tongue.extension);
   controls.update();
   updateSkeletonLines();
   if (mixer) syncControls();
