@@ -494,7 +494,11 @@ export function load3DS(arrayBuffer) {
     parent.add(object);
     if (deform) bones.push(object);
 
-    if (src.pos.length > 1) {
+    // Bip01's position keys slide the whole animal up to ~100 units off its
+    // first key and snap it back every 12 or 13 frames. They were authored
+    // with the root rotation held below, so the root holds its first position
+    // too and the lizard stays centred on the perch.
+    if (src.pos.length > 1 && name !== "Bip01") {
       const times = [];
       const values = [];
       src.pos.forEach((key) => {

@@ -18,7 +18,7 @@ test("uses the 3DS biped clip and the skin mesh", () => {
   assert.equal(loaded.meta.skinVertices, 439);
   assert.ok(loaded.meta.deformBones > 40);
   assert.equal(loaded.clip.name, "MAXSCENE");
-  assert.ok(loaded.clip.tracks.some((track) => track.name === "Bip01.position"));
+  assert.ok(loaded.clip.tracks.some((track) => track.name === "Bip01 Head.quaternion"));
   assert.ok(loaded.clip.duration >= 200 / 30 - 0.01);
 });
 
@@ -113,6 +113,25 @@ test("the root joint keeps its perch orientation", () => {
     const turn = new Quaternion().copy(rest).invert().multiply(rootBone.quaternion);
     const angle = (2 * Math.acos(Math.min(1, Math.abs(turn.w))) * 180) / Math.PI;
     assert.ok(angle < 1, `frame ${frame} root turned ${angle.toFixed(1)}°`);
+  }
+});
+
+test("the root joint keeps its centre through the clip", () => {
+  const loaded = load();
+  loaded.object.updateMatrixWorld(true);
+  const rootBone = loaded.object.getObjectByName("Bip01");
+  const rest = new Vector3();
+  const now = new Vector3();
+  rootBone.getWorldPosition(rest);
+  const mixer = new AnimationMixer(loaded.object);
+  mixer.clipAction(loaded.clip).play();
+  // The source keys slide the root out and snap it back at frames 12, 24, 37,
+  // 49 and 62; held on its first key it stays put on each side of those.
+  for (const frame of [11, 12, 23, 24, 36, 37, 61, 62, 94]) {
+    mixer.setTime(frame / 30);
+    loaded.object.updateMatrixWorld(true);
+    rootBone.getWorldPosition(now);
+    assert.ok(now.distanceTo(rest) < 1e-3, `frame ${frame} root moved ${now.distanceTo(rest).toFixed(1)}`);
   }
 });
 
