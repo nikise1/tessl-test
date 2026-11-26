@@ -69,6 +69,8 @@ let flickStart = null;
 const FLICK_OUT = 0.12;
 const FLICK_HOLD = 0.18;
 const FLICK_IN = 0.45;
+// While it flicks, the tongue ripples along its bones this many times a second.
+const FLICK_RIPPLE = 7;
 
 function resize() {
   const width = window.innerWidth;
@@ -156,7 +158,7 @@ function setSources(info, textureState = "loading") {
       : textureState === "missing"
         ? `The chameleon texture ${info.textureFile} could not be loaded, so the body uses a flat green.`
         : `The chameleon skin texture ${info.textureFile} is loading.`;
-  sourcesBody.textContent = `${info.sourceFile} is on screen: the lizard mesh, the Character Studio biped (${info.deformBones} joints), and one keyframe clip named ${info.animationName} (frames ${info.frameStart}–${info.frameEnd} at ${info.fps} fps). ${info.staticFile} is a static Wavefront skin of the same animal and has no animation, so it is not loaded. three.js TDSLoader does not read 3DS keyframes, so this page parses that chunk itself. The skin was exported without vertex weights; it is bound onto the biped so the clip can deform it. The tongue is not in the 3DS file: it is built in code on two extra bones under the lower jaw (Bip01 Bott), and its tip bone slides out to grow it and back to shrink it. ${textureNote}`;
+  sourcesBody.textContent = `${info.sourceFile} is on screen: the lizard mesh, the Character Studio biped (${info.deformBones} joints), and one keyframe clip named ${info.animationName} (frames ${info.frameStart}–${info.frameEnd} at ${info.fps} fps). ${info.staticFile} is a static Wavefront skin of the same animal and has no animation, so it is not loaded. three.js TDSLoader does not read 3DS keyframes, so this page parses that chunk itself. The skin was exported without vertex weights; it is bound onto the biped so the clip can deform it. The tongue is not in the 3DS file: it is built in code on a chain of nine extra bones under the lower jaw (Bip01 Bott). Its joints spread apart to grow it and close up to shrink it, and when it flicks they bend in a ripple that runs down to the tip. ${textureNote}`;
 }
 
 function paintSkin() {
@@ -258,8 +260,12 @@ function flickAt(seconds) {
 function updateFlick() {
   if (flickStart === null) return;
   const seconds = (performance.now() - flickStart) / 1000;
+  const total = FLICK_OUT + FLICK_HOLD + FLICK_IN;
   setTongue(flickAt(seconds));
-  if (seconds >= FLICK_OUT + FLICK_HOLD + FLICK_IN) flickStart = null;
+  // The ripple swells and dies with the flick, so the tongue ends straight.
+  const envelope = seconds >= total ? 0 : Math.sin((Math.PI * seconds) / total);
+  tongue.setWave(envelope, seconds * FLICK_RIPPLE * 2 * Math.PI);
+  if (seconds >= total) flickStart = null;
 }
 
 async function main() {
@@ -361,6 +367,7 @@ flickButton.addEventListener("click", () => {
 });
 tongueSlider.addEventListener("input", () => {
   flickStart = null;
+  tongue?.setWave(0);
   setTongue(Number(tongueSlider.value));
 });
 scrub.addEventListener("input", () => setFrame(Number(scrub.value)));

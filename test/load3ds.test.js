@@ -180,8 +180,13 @@ test("the tongue sits in the mouth on its own bones under the lower jaw", () => 
   const tip = loaded.object.getObjectByName("Tongue Tip");
   assert.ok(root?.isBone && tip?.isBone, "tongue bones exist");
   assert.equal(root.parent.name, "Bip01 Bott");
-  assert.equal(tip.parent, root);
-  assert.deepEqual(loaded.tongue.mesh.skeleton.bones, [root, tip]);
+  // The tongue is a chain of bones from the root to the tip, not just two.
+  const { bones } = loaded.tongue;
+  assert.ok(bones.length > 2, `${bones.length} tongue bones`);
+  assert.equal(bones[0], root);
+  assert.equal(bones.at(-1), tip);
+  bones.slice(1).forEach((bone, i) => assert.equal(bone.parent, bones[i], bone.name));
+  assert.deepEqual(loaded.tongue.mesh.skeleton.bones, bones);
   const weights = loaded.tongue.mesh.geometry.attributes.skinWeight;
   for (let i = 0; i < weights.count; i += 1) {
     assert.ok(Math.abs(weights.getX(i) + weights.getY(i) - 1) < 1e-6, `vertex ${i}`);
@@ -218,6 +223,31 @@ test("the tongue grows out of the mouth and shrinks back", () => {
   assert.ok(tongueTip(loaded).distanceTo(rest) < 1e-3, "the tongue returns to rest");
   loaded.tongue.setExtension(5);
   assert.equal(loaded.tongue.extension, 1, "extension clamps to 1");
+});
+
+test("the tongue ripples along its bones and straightens again", () => {
+  const loaded = load();
+  loaded.object.updateMatrixWorld(true);
+  loaded.tongue.setExtension(1);
+  const straight = tongueTip(loaded);
+  const root = new Vector3();
+  loaded.tongue.bones[0].getWorldPosition(root);
+  const length = straight.distanceTo(root);
+
+  loaded.tongue.setWave(1, Math.PI / 2);
+  const bent = tongueTip(loaded);
+  const offset = bent.distanceTo(straight);
+  assert.ok(offset > 10, `the tip moved ${offset.toFixed(1)} when the tongue bent`);
+  // A ripple bends the tongue, it does not stretch it.
+  assert.ok(bent.distanceTo(root) <= length + 1, `bent tongue is ${bent.distanceTo(root).toFixed(1)} long`);
+  // The joints near the root bend least, so the base stays in the mouth.
+  const [first, second] = loaded.tongue.bones.slice(1);
+  assert.ok(Math.abs(first.rotation.z) < Math.abs(loaded.tongue.bones.at(-1).rotation.z) + 1e-9);
+  assert.ok(Math.abs(first.rotation.z) > 0 || Math.abs(second.rotation.z) > 0, "the ripple reaches the base");
+
+  loaded.tongue.setWave(0);
+  assert.equal(loaded.tongue.wave, 0);
+  assert.ok(tongueTip(loaded).distanceTo(straight) < 1e-3, "the tongue is straight again");
 });
 
 test("the tongue follows the jaw through the clip", () => {
