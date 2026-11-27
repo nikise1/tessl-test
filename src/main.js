@@ -82,12 +82,16 @@ function resize() {
 
 function frameModel() {
   const box = new THREE.Box3().setFromObject(skin || model);
-  const center = box.getCenter(new THREE.Vector3());
   const size = box.getSize(new THREE.Vector3());
   const radius = Math.max(size.x, size.y, size.z, 1);
   const halfFov = THREE.MathUtils.degToRad(camera.fov) / 2;
   const distance = (radius * 0.62) / Math.tan(halfFov);
-  const offset = new THREE.Vector3(0.72, 0.38, 1).normalize().multiplyScalar(distance);
+  // The lizard faces +z and the fly hovers far out in front of its head. Look
+  // from near the front and aim a little toward the fly, so it starts in view
+  // between the camera and the lizard.
+  const center = box.getCenter(new THREE.Vector3());
+  if (fly) center.lerp(fly.home, 0.3);
+  const offset = new THREE.Vector3(0.2, 0.3, 1).normalize().multiplyScalar(distance);
   camera.position.copy(center).add(offset);
   camera.near = Math.max(distance / 300, 0.05);
   camera.far = distance * 40;
