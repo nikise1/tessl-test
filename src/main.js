@@ -51,7 +51,13 @@ controls.target.set(0, 0, 0);
 
 const clock = new THREE.Clock();
 let mixer = null;
-let action = null;
+// Each 3DS action plays on its own: index into actions, seconds into its clip,
+// and whether Play steps on to the next action or stops after this one.
+let actions = [];
+let current = 0;
+let actionTime = 0;
+let playAll = true;
+let restHold = 0;
 let meta = null;
 let skin = null;
 let model = null;
@@ -71,6 +77,8 @@ let flickStart = null;
 const FLICK_OUT = 0.12;
 const FLICK_HOLD = 0.18;
 const FLICK_IN = 0.45;
+// Seconds the lizard sits at rest between actions when Play runs through them.
+const REST_HOLD = 0.8;
 
 function resize() {
   const width = window.innerWidth;
@@ -103,51 +111,106 @@ function frameModel() {
 }
 
 function currentFrame() {
-  if (!mixer) return 0;
-  return Math.round(mixer.time * FPS);
+  const entry = actions[current];
+  if (!entry) return 0;
+  const local = Math.round(actionTime * FPS) - entry.lead;
+  return entry.start + Math.min(entry.end - entry.start, Math.max(0, local));
+}
+
+function lastFrame() {
+  return actions.length ? actions[actions.length - 1].end : 0;
+}
+
+// Pose the lizard at `time` seconds into action `index`. Time 0 and the end of
+// every action clip are the rest pose.
+function pose(index, time) {
+  if (!mixer || !actions[index]) return;
+  if (index !== current) actions[current].action.stop();
+  current = index;
+  const { action, clip } = actions[index];
+  actionTime = Math.min(clip.duration, Math.max(0, time));
+  action.enabled = true;
+  action.play();
+  action.paused = false;
+  action.time = actionTime;
+  mixer.update(0);
 }
 
 function setFrame(frame) {
-  if (!mixer || !action) return;
-  const end = meta?.frameEnd ?? 200;
-  const clamped = Math.min(end, Math.max(0, frame));
-  // A paused action ignores mixer.setTime, so apply the pose first, then pause.
-  action.paused = false;
-  action.play();
-  mixer.setTime(clamped / FPS);
-  action.paused = true;
+  if (!actions.length) return;
+  const clamped = Math.min(lastFrame(), Math.max(0, Math.round(frame)));
+  const index = actions.findIndex((entry) => clamped <= entry.end);
+  const entry = actions[index];
+  pose(index, (entry.lead + clamped - entry.start) / FPS);
+  playing = false;
+  syncControls();
+}
+
+function rest() {
+  pose(0, 0);
   playing = false;
   syncControls();
 }
 
 function syncControls() {
   const frame = currentFrame();
-  const end = meta?.frameEnd ?? 200;
-  frameLabel.textContent = `Frame ${frame}`;
+  const name = actions[current]?.name;
+  frameLabel.textContent = name ? `${name} · frame ${frame}` : `Frame ${frame}`;
   if (document.activeElement !== scrub) scrub.value = String(frame);
   playButton.disabled = playing;
   pauseButton.disabled = !playing;
   ranges.querySelectorAll("button").forEach((button) => {
-    button.setAttribute("aria-pressed", button.dataset.active === "true" ? "true" : "false");
+    button.setAttribute("aria-pressed", Number(button.dataset.index) === current ? "true" : "false");
   });
 }
 
-function playFrom(frame) {
-  if (!action || !mixer) return;
-  const end = meta.frameEnd;
-  const startAt = frame >= end ? 0 : frame;
-  action.reset();
-  action.setLoop(THREE.LoopRepeat, Infinity);
-  action.clampWhenFinished = false;
-  action.enabled = true;
-  action.paused = false;
-  action.play();
-  mixer.setTime(startAt / FPS);
+// Play runs through every action in turn, back to rest between them, and
+// loops. An action's own button plays just that action once.
+function play() {
+  if (!actions.length) return;
+  if (actionTime >= actions[current].clip.duration) pose((current + 1) % actions.length, 0);
+  playAll = true;
+  restHold = 0;
   playing = true;
-  ranges.querySelectorAll("button").forEach((button) => {
-    button.dataset.active = "true";
-  });
   syncControls();
+}
+
+function pause() {
+  playing = false;
+  syncControls();
+}
+
+function playFromStart() {
+  pose(0, 0);
+  play();
+}
+
+function playAction(index) {
+  if (!actions[index]) return;
+  pose(index, 0);
+  playAll = false;
+  restHold = 0;
+  playing = true;
+  syncControls();
+}
+
+function advance(delta) {
+  if (!playing || !actions.length) return;
+  if (restHold > 0) {
+    restHold -= delta;
+    return;
+  }
+  const time = actionTime + delta;
+  const { duration } = actions[current].clip;
+  if (time < duration) {
+    pose(current, time);
+  } else if (playAll) {
+    pose((current + 1) % actions.length, 0);
+    restHold = REST_HOLD;
+  } else {
+    pose(current, duration);
+    playing = false;
+  }
 }
 
 function show(element) {
@@ -162,7 +225,8 @@ function setSources(info, textureState = "loading") {
       : textureState === "missing"
         ? `The chameleon texture ${info.textureFile} could not be loaded, so the body uses a flat green.`
         : `The chameleon skin texture ${info.textureFile} is loading.`;
-  sourcesBody.textContent = `${info.sourceFile} is on screen: the lizard mesh, the Character Studio biped (${info.deformBones} joints), and one keyframe clip named ${info.animationName} (frames ${info.frameStart}–${info.frameEnd} at ${info.fps} fps). ${info.staticFile} is a static Wavefront skin of the same animal and has no animation, so it is not loaded. three.js TDSLoader does not read 3DS keyframes, so this page parses that chunk itself. The skin was exported without vertex weights; it is bound onto the biped so the clip can deform it. The tongue is not in the 3DS file: it is built in code on two extra bones under the lower jaw (Bip01 Bott), and its tip bone slides out to grow it and back to shrink it. A fly, also built in code, buzzes at the end of the tongue's reach: flick the tongue to catch and eat it, and another one arrives a moment later. ${textureNote}`;
+  const actionList = info.actions.map((entry) => `${entry.name} (frames ${entry.start}–${entry.end})`).join(", ");
+  sourcesBody.textContent = `${info.sourceFile} is on screen: the lizard mesh, the Character Studio biped (${info.deformBones} joints), and one keyframe clip named ${info.animationName}. That clip is separate actions placed end to end: ${actionList}. Each plays on its own at ${info.fps} fps, easing out of the rest pose and back into it. ${info.staticFile} is a static Wavefront skin of the same animal and has no animation, so it is not loaded. three.js TDSLoader does not read 3DS keyframes, so this page parses that chunk itself. The skin was exported without vertex weights; it is bound onto the biped so the clip can deform it. The tongue is not in the 3DS file: it is built in code on two extra bones under the lower jaw (Bip01 Bott), and its tip bone slides out to grow it and back to shrink it. A fly, also built in code, buzzes at the end of the tongue's reach: flick the tongue to catch and eat it, and another one arrives a moment later. ${textureNote}`;
 }
 
 function paintSkin() {
@@ -301,23 +365,22 @@ async function main() {
 
   buildSkeletonLines(tongue ? [...loaded.bones, ...tongue.bones] : loaded.bones);
   mixer = new THREE.AnimationMixer(loaded.object);
-  action = mixer.clipAction(loaded.clip);
-  action.play();
-  action.paused = true;
-  mixer.setTime(0);
+  actions = loaded.actions.map((entry) => {
+    const action = mixer.clipAction(entry.clip);
+    action.setLoop(THREE.LoopOnce, 1);
+    action.clampWhenFinished = true;
+    return { ...entry, action };
+  });
+  pose(0, 0);
 
-  scrub.max = String(meta.frameEnd);
-  const segments = [
-    { label: "MAXSCENE", start: 0, end: meta.frameEnd },
-  ];
-  segments.forEach((segment) => {
+  scrub.max = String(lastFrame());
+  actions.forEach((entry, index) => {
     const button = document.createElement("button");
     button.type = "button";
-    button.textContent = segment.label;
-    button.dataset.start = String(segment.start);
-    button.dataset.end = String(segment.end);
-    button.dataset.active = "false";
-    button.addEventListener("click", () => playFrom(segment.start));
+    button.textContent = entry.name;
+    button.title = `Frames ${entry.start}–${entry.end}`;
+    button.dataset.index = String(index);
+    button.addEventListener("click", () => playAction(index));
     ranges.append(button);
   });
 
@@ -337,14 +400,15 @@ async function main() {
   if (params.get("bones") === "1") bonesButton.click();
   if (params.has("tongue")) setTongue(Number(params.get("tongue")));
   if (params.has("frame")) setFrame(Number(params.get("frame")));
-  else if (params.get("play") === "1") playFrom(0);
+  else if (params.get("play") === "1") playFromStart();
   syncControls();
 
   window.__lizard = {
     meta,
     setFrame,
-    play: () => playFrom(0),
-    pause: () => setFrame(currentFrame()),
+    play: () => playFromStart(),
+    playAction,
+    pause,
     frame: currentFrame,
     camera,
     controls,
@@ -359,12 +423,10 @@ async function main() {
 
 playButton.addEventListener("click", () => {
   if (!meta) return;
-  playFrom(currentFrame());
+  play();
 });
-pauseButton.addEventListener("click", () => setFrame(currentFrame()));
-restartButton.addEventListener("click", () => {
-  setFrame(0);
-});
+pauseButton.addEventListener("click", pause);
+restartButton.addEventListener("click", rest);
 wireButton.addEventListener("click", () => {
   if (!skin) return;
   const on = wireButton.getAttribute("aria-pressed") !== "true";
@@ -396,7 +458,7 @@ window.addEventListener("keydown", (event) => {
 
 function tick() {
   const delta = clock.getDelta();
-  if (mixer && playing) mixer.update(delta);
+  advance(delta);
   updateFlick();
   if (fly) fly.update(clock.elapsedTime, tongueTipBone(), tongue.extension);
   controls.update();

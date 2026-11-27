@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import test from "node:test";
 import { AnimationMixer, Quaternion, Vector3 } from "three";
-import { load3DS } from "../src/load3ds.js";
+import { FPS, load3DS } from "../src/load3ds.js";
 
 const file = new URL("../public/models/test_lizard_01.3ds", import.meta.url);
 const bytes = fs.readFileSync(file);
@@ -19,7 +19,7 @@ test("uses the 3DS biped clip and the skin mesh", () => {
   assert.ok(loaded.meta.deformBones > 40);
   assert.equal(loaded.clip.name, "MAXSCENE");
   assert.ok(loaded.clip.tracks.some((track) => track.name === "Bip01 Head.quaternion"));
-  assert.ok(loaded.clip.duration >= 200 / 30 - 0.01);
+  assert.ok(loaded.clip.duration >= 200 / FPS - 0.01);
 });
 
 test("bind pose puts the head joint on the exported head mesh", () => {
@@ -109,7 +109,7 @@ test("the root joint keeps its perch orientation", () => {
   const action = mixer.clipAction(loaded.clip);
   action.play();
   for (const frame of [30, 60, 94]) {
-    mixer.setTime(frame / 30);
+    mixer.setTime(frame / FPS);
     const turn = new Quaternion().copy(rest).invert().multiply(rootBone.quaternion);
     const angle = (2 * Math.acos(Math.min(1, Math.abs(turn.w))) * 180) / Math.PI;
     assert.ok(angle < 1, `frame ${frame} root turned ${angle.toFixed(1)}°`);
@@ -128,7 +128,7 @@ test("the root joint keeps its centre through the clip", () => {
   // The source keys slide the root out and snap it back at frames 12, 24, 37,
   // 49 and 62; held on its first key it stays put on each side of those.
   for (const frame of [11, 12, 23, 24, 36, 37, 61, 62, 94]) {
-    mixer.setTime(frame / 30);
+    mixer.setTime(frame / FPS);
     loaded.object.updateMatrixWorld(true);
     rootBone.getWorldPosition(now);
     assert.ok(now.distanceTo(rest) < 1e-3, `frame ${frame} root moved ${now.distanceTo(rest).toFixed(1)}`);
@@ -144,7 +144,7 @@ test("the clip moves the head", () => {
   const mixer = new AnimationMixer(loaded.object);
   const action = mixer.clipAction(loaded.clip);
   action.play();
-  mixer.update(35 / 30);
+  mixer.update(35 / FPS);
   loaded.object.updateMatrixWorld(true);
   head.getWorldPosition(after);
   assert.ok(before.distanceTo(after) > 20, `moved ${before.distanceTo(after)}`);
@@ -243,11 +243,103 @@ test("the tongue follows the jaw through the clip", () => {
   const loaded = load();
   const mixer = new AnimationMixer(loaded.object);
   mixer.clipAction(loaded.clip).play();
-  mixer.setTime(35 / 30);
+  mixer.setTime(35 / FPS);
   loaded.object.updateMatrixWorld(true);
   const jaw = new Vector3();
   const root = new Vector3();
   loaded.object.getObjectByName("Bip01 Bott").getWorldPosition(jaw);
   loaded.tongue.bones[0].getWorldPosition(root);
   assert.ok(root.distanceTo(jaw) < 25, `tongue root is ${root.distanceTo(jaw).toFixed(1)} from the jaw`);
+});
+
+function jointPositions(loaded) {
+  loaded.object.updateMatrixWorld(true);
+  return loaded.bones.map((bone) => bone.getWorldPosition(new Vector3()));
+}
+
+function farthest(a, b) {
+  return Math.max(...a.map((point, index) => point.distanceTo(b[index])));
+}
+
+test("the clip splits into six separate actions at 25 fps", () => {
+  const loaded = load();
+  assert.equal(FPS, 25);
+  assert.deepEqual(
+    loaded.actions.map(({ name, start, end }) => [name, start, end]),
+    [
+      ["Action 1", 0, 11],
+      ["Action 2", 12, 23],
+      ["Action 3", 24, 36],
+      ["Action 4", 37, 48],
+      ["Action 5", 49, 61],
+      ["Eat", 62, 93],
+    ],
+  );
+  loaded.actions.forEach(({ clip, start, end, lead }) => {
+    assert.ok(Math.abs(clip.duration - (2 * lead + end - start) / FPS) < 1e-9, clip.name);
+  });
+});
+
+test("each action starts and ends at rest", () => {
+  const loaded = load();
+  const rest = jointPositions(loaded);
+  const mixer = new AnimationMixer(loaded.object);
+  loaded.actions.forEach(({ clip }) => {
+    const action = mixer.clipAction(clip);
+    action.play();
+    for (const time of [0, clip.duration]) {
+      action.time = time;
+      mixer.update(0);
+      const off = farthest(jointPositions(loaded), rest);
+      assert.ok(off < 1e-3, `${clip.name} at ${time.toFixed(2)}s is ${off.toFixed(1)} off rest`);
+    }
+    action.stop();
+  });
+});
+
+test("an action plays its own frames of the source clip", () => {
+  const loaded = load();
+  const mixer = new AnimationMixer(loaded.object);
+  const whole = mixer.clipAction(loaded.clip);
+  const { clip, start, end, lead } = loaded.actions[3];
+  const part = mixer.clipAction(clip);
+  for (let frame = start; frame <= end; frame += 1) {
+    whole.play();
+    mixer.setTime(frame / FPS);
+    const expected = jointPositions(loaded);
+    whole.stop();
+    part.play();
+    part.time = (lead + frame - start) / FPS;
+    mixer.update(0);
+    const off = farthest(jointPositions(loaded), expected);
+    part.stop();
+    assert.ok(off < 1e-3, `frame ${frame} is ${off.toFixed(2)} off the source`);
+  }
+});
+
+test("no action snaps between frames the way the joined clip does", () => {
+  const loaded = load();
+  const mixer = new AnimationMixer(loaded.object);
+  // The joined clip snaps the tail about 300 units at frame 37.
+  const whole = mixer.clipAction(loaded.clip);
+  whole.play();
+  mixer.setTime(36 / FPS);
+  const before = jointPositions(loaded);
+  mixer.setTime(37 / FPS);
+  assert.ok(farthest(jointPositions(loaded), before) > 250, "the joined clip snaps at frame 37");
+  whole.stop();
+  loaded.actions.forEach(({ clip }) => {
+    const action = mixer.clipAction(clip);
+    action.play();
+    let previous = jointPositions(loaded);
+    for (let frame = 1; frame <= Math.round(clip.duration * FPS); frame += 1) {
+      action.time = frame / FPS;
+      mixer.update(0);
+      const now = jointPositions(loaded);
+      const step = farthest(now, previous);
+      assert.ok(step < 100, `${clip.name} jumps ${step.toFixed(0)} at frame ${frame}`);
+      previous = now;
+    }
+    action.stop();
+  });
 });
