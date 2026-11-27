@@ -17,7 +17,7 @@ const ROOT = [12, -17, 0];
 const PITCH = (-16 * Math.PI) / 180;
 // Shaft from the root to the club, then the sticky club at the tip.
 const SHAFT = 32;
-const CLUB = 10;
+export const CLUB = 10;
 // The shaft is a chain of this many segments, each on its own bone, so it can
 // bend along its length like a lizard's tongue instead of sliding as one rod.
 const SEGMENTS = 8;
@@ -30,6 +30,33 @@ const RIPPLE = 0.9;
 // At full extension the club is this far past its rest position, so the whole
 // tongue measures SHAFT + CLUB + REACH = 524 from root to tip.
 const REACH = 482;
+// When the club grips prey it shortens and swells by these shares, cupping
+// around it the way a chameleon's sticky club closes on an insect.
+const GRIP_SQUASH = 0.3;
+const GRIP_SWELL = 0.45;
+// One flick, in seconds: the tongue shoots out, holds a moment, and pulls back
+// in. While it pulls back it ripples along its bones this many times a second.
+export const FLICK_OUT = 0.12;
+export const FLICK_HOLD = 0.18;
+export const FLICK_IN = 0.45;
+const FLICK_RIPPLE = 7;
+
+// The pose of the tongue a given time into a flick, with the retraction
+// starting at back (the end of the hold, or earlier once the club has caught
+// something). A chameleon fires its tongue out straight at the prey, so the
+// ripple only swells on the way back in, and dies out as the tongue arrives.
+export function flickPose(seconds, back = FLICK_OUT + FLICK_HOLD) {
+  if (seconds < FLICK_OUT) return { extension: seconds / FLICK_OUT, wave: 0, phase: 0, done: false };
+  if (seconds < back) return { extension: 1, wave: 0, phase: 0, done: false };
+  const t = (seconds - back) / FLICK_IN;
+  if (t >= 1) return { extension: 0, wave: 0, phase: 0, done: true };
+  return {
+    extension: 1 - t * t * (3 - 2 * t),
+    wave: Math.sin(Math.PI * t),
+    phase: (seconds - back) * FLICK_RIPPLE * 2 * Math.PI,
+    done: false,
+  };
+}
 
 function profile() {
   const points = [];
@@ -85,6 +112,7 @@ export function addTongue(jaw) {
     bones.push(joint);
   }
   const joints = bones.slice(1);
+  const tip = bones[SEGMENTS];
   bones.forEach((bone) => {
     bone.userData.deform = true;
   });
@@ -104,6 +132,7 @@ export function addTongue(jaw) {
   let extension = 0;
   let wave = 0;
   let phase = 0;
+  let grip = 0;
   return {
     mesh,
     bones,
@@ -113,6 +142,9 @@ export function addTongue(jaw) {
     },
     get wave() {
       return wave;
+    },
+    get grip() {
+      return grip;
     },
     // 0 keeps the tongue in the mouth, 1 shoots the club out by REACH. Every
     // segment grows by the same share, so the joints stay evenly spaced.
@@ -132,6 +164,15 @@ export function addTongue(jaw) {
         const share = (i + 1) / SEGMENTS;
         joint.rotation.z = wave * BEND * share * Math.sin(phase - i * RIPPLE);
       });
+      root.updateMatrixWorld(true);
+    },
+    // 0 leaves the club open, 1 closes it around whatever it has caught. The
+    // tip bone carries the club, so scaling it reshapes the club and eases
+    // into the end of the shaft.
+    setGrip(value) {
+      grip = Math.min(1, Math.max(0, Number(value) || 0));
+      const swell = 1 + grip * GRIP_SWELL;
+      tip.scale.set(1 - grip * GRIP_SQUASH, swell, swell);
       root.updateMatrixWorld(true);
     },
   };
