@@ -1,0 +1,44 @@
+name: Vercel preview link
+
+# The Vercel bot comments on every pull request and edits that comment on each
+# new deployment. Copy its preview link into the pull request's description.
+on:
+  issue_comment:
+    types: [created, edited]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  add-preview-link:
+    if: github.event.issue.pull_request && github.event.comment.user.login == 'vercel[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/github-script@v7
+        with:
+          script: |
+            const { previewUrls, withPreviewSection } = await import(
+              `${process.env.GITHUB_WORKSPACE}/scripts/vercel-preview-link.js`
+            );
+            const urls = previewUrls(context.payload.comment.body);
+            if (urls.length === 0) {
+              core.info("No preview link in the Vercel comment.");
+              return;
+            }
+            const { data: pr } = await github.rest.pulls.get({
+              ...context.repo,
+              pull_number: context.issue.number,
+            });
+            const body = withPreviewSection(pr.body, urls);
+            if (body === (pr.body || "")) {
+              core.info("Description already has the preview link.");
+              return;
+            }
+            await github.rest.pulls.update({
+              ...context.repo,
+              pull_number: context.issue.number,
+              body,
+            });
+            core.info(`Added ${urls.join(", ")} to the description.`);
