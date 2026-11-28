@@ -40,7 +40,22 @@ const POS = 0xb020;
 const ROT = 0xb021;
 const SCL = 0xb022;
 
-const FPS = 30;
+// The scenes the clip was exported from are set to 25 fps.
+const FPS = 25;
+
+// The MAXSCENE clip is separate Character Studio actions placed end to end,
+// each starting from its own pose, so every bone snaps at 12, 24, 37, 49 and
+// 62. The last, 32 frames long, is the eat action. Each plays on its own.
+const ACTIONS = [
+  { name: "Action 1", start: 0, end: 11 },
+  { name: "Action 2", start: 12, end: 23 },
+  { name: "Action 3", start: 24, end: 36 },
+  { name: "Action 4", start: 37, end: 48 },
+  { name: "Action 5", start: 49, end: 61 },
+  { name: "Eat", start: 62, end: 93 },
+];
+// Frames each action takes to ease out of the rest pose and back into it.
+const BLEND = 10;
 
 const decoder = new TextDecoder("latin1");
 
@@ -418,6 +433,28 @@ function bindSkin(skin, bones) {
   skin.frustumCulled = false;
 }
 
+// One clip per action: rest pose, BLEND frames easing into the action's first
+// frame, the action's own frames, then BLEND frames easing back to rest.
+function actionClips(clip, rest) {
+  return ACTIONS.map(({ name, start, end }) => {
+    const length = end - start;
+    const tracks = clip.tracks.map((track) => {
+      const size = track.getValueSize();
+      const interpolant = track.createInterpolant();
+      const times = [0];
+      const values = [...rest.get(track.name)];
+      for (let frame = 0; frame <= length; frame += 1) {
+        times.push((BLEND + frame) / FPS);
+        values.push(...interpolant.evaluate((start + frame) / FPS).slice(0, size));
+      }
+      times.push((2 * BLEND + length) / FPS);
+      values.push(...rest.get(track.name));
+      return new track.constructor(track.name, times, values);
+    });
+    return { name, start, end, lead: BLEND, clip: new AnimationClip(name, (2 * BLEND + length) / FPS, tracks) };
+  });
+}
+
 function uniqueName(name, used) {
   if (!used.has(name)) {
     used.add(name);
@@ -458,6 +495,7 @@ export function load3DS(arrayBuffer) {
   const usedNames = new Set();
   const bones = [];
   const tracks = [];
+  const rest = new Map();
   let skin = null;
 
   function build(node, parent) {
@@ -494,7 +532,11 @@ export function load3DS(arrayBuffer) {
     parent.add(object);
     if (deform) bones.push(object);
 
-    if (src.pos.length > 1) {
+    // Bip01's position keys slide the whole animal up to ~100 units off its
+    // first key and snap it back every 12 or 13 frames. They were authored
+    // with the root rotation held below, so the root holds its first position
+    // too and the lizard stays centred on the perch.
+    if (src.pos.length > 1 && name !== "Bip01") {
       const times = [];
       const values = [];
       src.pos.forEach((key) => {
@@ -502,6 +544,7 @@ export function load3DS(arrayBuffer) {
         values.push(key.values[0], key.values[1], key.values[2]);
       });
       tracks.push(new VectorKeyframeTrack(`${name}.position`, times, values));
+      rest.set(`${name}.position`, object.position.toArray());
     }
     // Bip01 is the biped root. Its rotation keys turn the whole animal around
     // the perch, about 110° across the clip. Limb, spine, and head tracks
@@ -511,6 +554,7 @@ export function load3DS(arrayBuffer) {
       const values = [];
       quats.forEach((q) => values.push(q.x, q.y, q.z, q.w));
       tracks.push(new QuaternionKeyframeTrack(`${name}.quaternion`, times, values));
+      rest.set(`${name}.quaternion`, object.quaternion.toArray());
     }
 
     node.children.forEach((child) => build(child, object));
@@ -524,6 +568,7 @@ export function load3DS(arrayBuffer) {
 
   const duration = Math.max(parsed.segment[1], parsed.frameCount) / FPS;
   const clip = new AnimationClip(parsed.animationName || "MAXSCENE", duration, tracks);
+  const actions = actionClips(clip, rest);
   const meta = {
     sourceFile: "test_lizard_01.3DS",
     staticFile: "test_lizard_01.obj",
@@ -531,6 +576,7 @@ export function load3DS(arrayBuffer) {
     fps: FPS,
     frameStart: parsed.segment[0],
     frameEnd: parsed.segment[1] || parsed.frameCount,
+    actions: actions.map(({ name, start, end }) => ({ name, start, end })),
     skinVertices: skin ? skin.geometry.attributes.position.count : 0,
     deformBones: bones.length,
     sourceTexture: "LIZARD_M.JPG",
@@ -538,7 +584,7 @@ export function load3DS(arrayBuffer) {
     normalFile: "LIZARD_M_normal.png",
     roughnessFile: "LIZARD_M_roughness.png",
   };
-  return { object: root, clip, skin, bones, tongue, meta };
+  return { object: root, clip, actions, skin, bones, tongue, meta };
 }
 
 export { FPS };
