@@ -2,6 +2,7 @@ import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { createFly } from "./fly.js";
 import { FPS, load3DS } from "./load3ds.js";
+import { FLICK_HOLD, FLICK_OUT, flickPose } from "./tongue.js";
 
 const canvas = document.querySelector("#view");
 const fileLine = document.querySelector(".file");
@@ -73,12 +74,10 @@ let skinRoughness = null;
 let tongue = null;
 let fly = null;
 let flickStart = null;
-// One flick: the tongue shoots out, holds a moment, and pulls back in.
-const FLICK_OUT = 0.12;
-const FLICK_HOLD = 0.18;
-const FLICK_IN = 0.45;
 // Seconds the lizard sits at rest between actions when Play runs through them.
 const REST_HOLD = 0.8;
+// Seconds into the flick when the tongue starts back.
+let flickBack = FLICK_OUT + FLICK_HOLD;
 
 function resize() {
   const width = window.innerWidth;
@@ -226,7 +225,7 @@ function setSources(info, textureState = "loading") {
         ? `The chameleon texture ${info.textureFile} could not be loaded, so the body uses a flat green.`
         : `The chameleon skin texture ${info.textureFile} is loading.`;
   const actionList = info.actions.map((entry) => `${entry.name} (frames ${entry.start}–${entry.end})`).join(", ");
-  sourcesBody.textContent = `${info.sourceFile} is on screen: the lizard mesh, the Character Studio biped (${info.deformBones} joints), and one keyframe clip named ${info.animationName}. That clip is separate actions placed end to end: ${actionList}. Each plays on its own at ${info.fps} fps, easing out of the rest pose and back into it. ${info.staticFile} is a static Wavefront skin of the same animal and has no animation, so it is not loaded. three.js TDSLoader does not read 3DS keyframes, so this page parses that chunk itself. The skin was exported without vertex weights; it is bound onto the biped so the clip can deform it. The tongue is not in the 3DS file: it is built in code on two extra bones under the lower jaw (Bip01 Bott), and its tip bone slides out to grow it and back to shrink it. A fly, also built in code, buzzes at the end of the tongue's reach: flick the tongue to catch and eat it, and another one arrives a moment later. ${textureNote}`;
+  sourcesBody.textContent = `${info.sourceFile} is on screen: the lizard mesh, the Character Studio biped (${info.deformBones} joints), and one keyframe clip named ${info.animationName}. That clip is separate actions placed end to end: ${actionList}. Each plays on its own at ${info.fps} fps, easing out of the rest pose and back into it. ${info.staticFile} is a static Wavefront skin of the same animal and has no animation, so it is not loaded. three.js TDSLoader does not read 3DS keyframes, so this page parses that chunk itself. The skin was exported without vertex weights; it is bound onto the biped so the clip can deform it. The tongue is not in the 3DS file: it is built in code on a chain of nine extra bones under the lower jaw (Bip01 Bott). Its joints spread apart to grow it and close up to shrink it, and when it flicks they bend in a ripple that runs down to the tip. A fly, also built in code, buzzes at the end of the tongue's reach: flick the tongue to catch and eat it. The tongue shoots out straight, its club closes around the fly, and it ripples back into the mouth with the fly stuck to it. Another fly arrives a moment later. ${textureNote}`;
 }
 
 function paintSkin() {
@@ -318,18 +317,15 @@ function setTongue(value) {
   tongueSlider.value = String(tongue.extension);
 }
 
-function flickAt(seconds) {
-  if (seconds < FLICK_OUT) return seconds / FLICK_OUT;
-  if (seconds < FLICK_OUT + FLICK_HOLD) return 1;
-  const back = (seconds - FLICK_OUT - FLICK_HOLD) / FLICK_IN;
-  return back >= 1 ? 0 : 1 - back * back * (3 - 2 * back);
-}
-
 function updateFlick() {
   if (flickStart === null) return;
   const seconds = (performance.now() - flickStart) / 1000;
-  setTongue(flickAt(seconds));
-  if (seconds >= FLICK_OUT + FLICK_HOLD + FLICK_IN) flickStart = null;
+  // Once the club has the fly, the tongue pulls it in at once.
+  if (fly?.state === "caught" && seconds >= FLICK_OUT) flickBack = Math.min(flickBack, seconds);
+  const pose = flickPose(seconds, flickBack);
+  setTongue(pose.extension);
+  tongue.setWave(pose.wave, pose.phase);
+  if (pose.done) flickStart = null;
 }
 
 function tongueTipBone() {
@@ -442,9 +438,11 @@ bonesButton.addEventListener("click", () => {
 flickButton.addEventListener("click", () => {
   if (!tongue) return;
   flickStart = performance.now();
+  flickBack = FLICK_OUT + FLICK_HOLD;
 });
 tongueSlider.addEventListener("input", () => {
   flickStart = null;
+  tongue?.setWave(0);
   setTongue(Number(tongueSlider.value));
 });
 scrub.addEventListener("input", () => setFrame(Number(scrub.value)));
@@ -460,7 +458,10 @@ function tick() {
   const delta = clock.getDelta();
   advance(delta);
   updateFlick();
-  if (fly) fly.update(clock.elapsedTime, tongueTipBone(), tongue.extension);
+  if (fly) {
+    fly.update(clock.elapsedTime, tongueTipBone(), tongue.extension);
+    tongue.setGrip(fly.state === "caught" ? 1 : 0);
+  }
   controls.update();
   updateSkeletonLines();
   if (mixer) syncControls();
