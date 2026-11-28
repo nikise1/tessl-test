@@ -2,13 +2,16 @@ import {
   Group,
   Mesh,
   MeshStandardMaterial,
+  Quaternion,
   SphereGeometry,
   Vector3,
 } from "three";
+import { CLUB } from "./tongue.js";
 
 // The fly buzzes around a home point within reach of the tongue. When the club
-// at the tongue tip comes within CATCH of it, the fly sticks to the club, rides
-// it back into the mouth and is eaten. A new fly turns up RESPAWN seconds later.
+// at the tongue tip comes within CATCH of it, the fly sticks inside the club,
+// swings with it as the tongue ripples back into the mouth and is eaten. A new
+// fly turns up RESPAWN seconds later.
 const CATCH = 20;
 const RESPAWN = 2.5;
 // How far the fly wanders from home. Its farthest point is under CATCH away,
@@ -16,6 +19,8 @@ const RESPAWN = 2.5;
 const BUZZ = [12, 6, 12];
 // The tongue counts as back in the mouth below this extension.
 const SWALLOWED = 0.05;
+// A caught fly sits this far along the tip bone, in the middle of the club.
+const HELD = CLUB / 2;
 
 function flyMesh() {
   const group = new Group();
@@ -58,6 +63,8 @@ export function createFly(home) {
   const { group, wings } = flyMesh();
   const next = new Vector3();
   const tipPoint = new Vector3();
+  const tipTurn = new Quaternion();
+  const hold = new Quaternion();
   let state = "flying";
   let eatenAt = 0;
 
@@ -79,7 +86,8 @@ export function createFly(home) {
     // Call once a frame with the time in seconds, the tongue's tip bone and its
     // extension (0 in the mouth, 1 at full reach).
     update(seconds, tip, extension) {
-      const flap = Math.sin(seconds * 42) * 0.7;
+      // A stuck fly can no longer beat its wings.
+      const flap = state === "caught" ? 0 : Math.sin(seconds * 42) * 0.7;
       wings.forEach((hinge) => {
         hinge.rotation.z = hinge.userData.side * flap;
       });
@@ -92,10 +100,17 @@ export function createFly(home) {
       if (state === "flying") {
         buzzAt(seconds, group.position);
         group.lookAt(buzzAt(seconds + 0.05, next));
-        if (tip && extension > SWALLOWED && tipPoint.distanceTo(group.position) < CATCH) state = "caught";
+        if (tip && extension > SWALLOWED && tipPoint.distanceTo(group.position) < CATCH) {
+          state = "caught";
+          // Keep the way the fly was facing, turned with the club from now on.
+          tip.getWorldQuaternion(tipTurn);
+          hold.copy(tipTurn.invert()).multiply(group.quaternion);
+        }
       }
       if (state === "caught") {
-        group.position.copy(tipPoint);
+        // Follow the club as the bones bend, not just its root.
+        group.position.copy(tip.localToWorld(next.set(HELD, 0, 0)));
+        group.quaternion.copy(tip.getWorldQuaternion(tipTurn).multiply(hold));
         if (extension <= SWALLOWED) {
           state = "eaten";
           eatenAt = seconds;
